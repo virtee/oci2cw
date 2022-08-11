@@ -1,0 +1,7 @@
+FROM registry.fedoraproject.org/fedora
+
+RUN dnf install -y util-linux cryptsetup e2fsprogs
+
+COPY build_disk.sh /build_disk.sh
+
+CMD ["/bin/bash", "/build_disk.sh"]
