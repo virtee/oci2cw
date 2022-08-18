@@ -107,6 +107,7 @@ if [ $? != 0 ]; then
 fi
 
 cd ${dir}
+rm -fr dev
 buildah inspect $OCI_IMAGE > .krun_config.json
 
 tar cpf $OCI_TARBALL .
