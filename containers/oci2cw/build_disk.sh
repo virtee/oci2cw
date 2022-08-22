@@ -4,6 +4,7 @@ OCI_TARBALL=/work/oci.tar
 DISK=/work/disk.img
 CRYPT_PARTITION=cwroot
 CWDIR=/tmp/cwdir
+MIN_DISKSIZE=52428800
 
 create_encrypted_disk() {    
     fallocate -l $DISKSIZE $DISK
@@ -49,6 +50,9 @@ fi
 
 let overcommit=$TARSIZE/4
 let DISKSIZE=$TARSIZE+$overcommit
+if (( $DISKSIZE < $MIN_DISKSIZE )); then
+	DISKSIZE=$MIN_DISKSIZE
+fi
 
 echo "OCI tarball size: ${TARSIZE}"
 echo "Creating a disk with size: ${DISKSIZE}"
