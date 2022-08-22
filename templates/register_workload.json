@@ -1,0 +1,6 @@
+{
+    "workload_id": "OCI2CW_WORKLOAD_ID",
+    "launch_measurement": "OCI2CW_LAUNCH_MEASUREMENT",
+    "tee_config": "{\"flags\":{\"bits\":63},\"minfw\":{\"major\":0,\"minor\":0}}",
+    "passphrase": "OCI2CW_PASSPHRASE"
+}

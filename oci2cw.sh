@@ -4,7 +4,7 @@ BASE_DIR=`dirname $0`
 POSITIONAL_ARGS=()
 
 print_usage() {
-	echo "Usage: $0 [-t TEE_TYPE] [-c TEE_CONFIG] [-C TEE_CERT_CHAIN] [-p CW_PASSWORD ] OCI_IMAGE CW_IMAGE"
+	echo "Usage: $0 -c TEE_CONFIG -C TEE_CERT_CHAIN [-p CW_PASSWORD ] OCI_IMAGE CW_IMAGE"
 	exit 1
 }
 
@@ -49,33 +49,37 @@ set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
 OCI_IMAGE=$1
 CW_IMAGE=$2
 
-if [ -z ${OCI_IMAGE} ] || [ -z ${CW_IMAGE} ]; then
+if [ -z "${OCI_IMAGE}" ] || [ -z "${CW_IMAGE}" ]; then
 	print_usage
 fi
 
-if [ -z ${TEE_TYPE} ]; then
-    TEE_TYPE="sev"
+if [ -z "${TEE_CONFIG}" ]; then
+    echo "Missing \"-c|--tee-config\" argument"
+    exit 1
+elif [ ! -e "${TEE_CONFIG}" ]; then
+    echo "Can't find TEE_CONFIG file: ${TEE_CONFIG}"
+    exit 1
 fi
+
+TEE_TYPE=`grep tee\" ${TEE_CONFIG} | sed -E "s/.*: \"(.*)\",/\1/g"`
+WORKLOAD_ID=`grep workload_id ${TEE_CONFIG} | sed -E "s/.*: \"(.*)\",/\1/g"`
+CPUS=`grep cpus ${TEE_CONFIG} | sed -E "s/.*: (.*),/\1/g"`
+RAM_MIB=`grep ram_mib ${TEE_CONFIG} | sed -E "s/.*: (.*),/\1/g"`
+ATTESTATION_URL=`grep attestation_url ${TEE_CONFIG} | sed -E "s/.*: \"(.*)\"/\1/g"`
+
+KRUNFW_MEASUREMENT=`krunfw_measurement -c $CPUS -m $RAM_MIB /usr/lib64/libkrunfw-sev.so | grep SEV-ES | sed -e "s/SEV-ES:\s//g"`
 
 case ${TEE_TYPE} in
     "sev")
-        if [ -z ${TEE_CERT_CHAIN} ]; then
+        if [ -z "${TEE_CERT_CHAIN}" ]; then
             echo "TEE type \"sev\" requires the \"-C|--tee-cert-chain\" argument"
             exit 1
-        elif [ ! -e ${TEE_CERT_CHAIN} ]; then
+        elif [ ! -e "${TEE_CERT_CHAIN}" ]; then
             echo "Can't find TEE_CERT_CHAIN file: ${TEE_CERT_CHAIN}"
             exit 1
         fi
-        if [ -z ${TEE_CONFIG} ]; then
-            echo "TEE type \"sev\" requires the \"-c|--tee-config\" argument"
-            exit 1
-        elif [ ! -e ${TEE_CONFIG} ]; then
-            echo "Can't find TEE_CONFIG file: ${TEE_CONFIG}"
-            exit 1
-        fi
-        if [ -z ${CW_PASSWORD} ]; then
-            echo "TEE type \"sev\" requires the \"-p|--password\" argument"
-            exit 1
+        if [ -z "${CW_PASSWORD}" ]; then
+            CW_PASSWORD=`tr -dc A-Za-z0-9 </dev/urandom | head -c 64`
         fi
         ;;
     *)
@@ -84,7 +88,22 @@ case ${TEE_TYPE} in
         ;;    
 esac
 
-if [ -z ${BUILDAH_ISOLATION} ]; then
+if [ $? != 0 ] || [ -z "${KRUNFW_MEASUREMENT}" ]; then
+    echo "Couldn't generate launch measurement for /usr/lib64/libkrunfw-sev.so"
+    exit 1
+fi
+
+if [ -z "${WORKLOAD_ID}" ]; then
+    echo "Empty workload_id field in TEE_CONFIG"
+    exit 1
+fi
+
+if [ -z "${ATTESTATION_URL}" ]; then
+    echo "Empty attestation_url field in TEE_CONFIG"
+    exit 1
+fi
+
+if [ -z "${BUILDAH_ISOLATION}" ]; then
     echo "Please re-run this command inside a \"buildah unshare\" session"
     exit 1
 fi
@@ -152,5 +171,12 @@ EOF
 
 podman image build -f ${TMPDIR}/Containerfile -t localhost/${CW_IMAGE}
 
-rm -r ${TMPDIR}
 
+sed -e "s/OCI2CW_WORKLOAD_ID/${WORKLOAD_ID}/" -e "s/OCI2CW_LAUNCH_MEASUREMENT/${KRUNFW_MEASUREMENT}/" -e "s/OCI2CW_PASSPHRASE/${CW_PASSWORD}/" ${BASE_DIR}/templates/register_workload.json > ${TMPDIR}/register_workload.json
+
+curl -d "@${TMPDIR}/register_workload.json" -X POST -H "Content-Type: application/json" ${ATTESTATION_URL}/kbs/v0/register_workload
+if [ $? != 0 ]; then
+    echo "Error registering workload"
+fi
+
+rm -r ${TMPDIR}
