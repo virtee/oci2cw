@@ -133,7 +133,7 @@ if [ ! -e ${TMPDIR}/disk.img ]; then
 fi
 
 mkdir -p ${TMPDIR}/tmp
-cp ${BASE_DIR}/containers/entrypoint/entrypoint ${TMPDIR}/entrypoint
+cp ${BASE_DIR}/entrypoint/entrypoint ${TMPDIR}/entrypoint
 chmod +x ${TMPDIR}/entrypoint
 cp ${TEE_CONFIG} $TMPDIR/krun-sev.json
 cp ${TEE_CERT_CHAIN} $TMPDIR/sev.chain

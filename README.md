@@ -12,17 +12,16 @@ images suitable for being launched as Confidential Workloads with
 
 ## Setting it up
 
+### Building the static entry point
+
+```
+make
+```
+
 ### Creating the oci2cw container
 
 ```
 cd containers/oci2cw
-sh build.sh
-```
-
-### Building the static entry point
-
-```
-cd containers/entrypoint
 sh build.sh
 ```
 
