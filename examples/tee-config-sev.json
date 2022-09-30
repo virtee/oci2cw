@@ -4,5 +4,5 @@
     "ram_mib": 2048,
     "tee": "sev",
     "tee_data": "{\"vendor_chain\": \"/sev.chain\", \"attestation_server_pubkey\": \"\"}",
-    "attestation_url": "http://192.168.0.216:8000"
+    "attestation_url": "http://127.0.0.1:8000"
 }
