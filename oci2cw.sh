@@ -4,7 +4,7 @@ BASE_DIR=`dirname $0`
 POSITIONAL_ARGS=()
 
 print_usage() {
-	echo "Usage: $0 -c TEE_CONFIG -C TEE_CERT_CHAIN [-p CW_PASSWORD ] OCI_IMAGE CW_IMAGE"
+	echo "Usage: $0 -c TEE_CONFIG [-C TEE_CERT_CHAIN] [-p CW_PASSWORD ] OCI_IMAGE CW_IMAGE"
 	exit 1
 }
 
@@ -67,8 +67,6 @@ CPUS=`grep cpus ${TEE_CONFIG} | sed -E "s/.*: (.*),/\1/g"`
 RAM_MIB=`grep ram_mib ${TEE_CONFIG} | sed -E "s/.*: (.*),/\1/g"`
 ATTESTATION_URL=`grep attestation_url ${TEE_CONFIG} | sed -E "s/.*: \"(.*)\"/\1/g"`
 
-KRUNFW_MEASUREMENT=`krunfw_measurement -c $CPUS -m $RAM_MIB /usr/lib64/libkrunfw-sev.so | grep SEV-ES | sed -e "s/SEV-ES:\s//g"`
-
 case ${TEE_TYPE} in
     "sev")
         if [ -z "${TEE_CERT_CHAIN}" ]; then
@@ -78,6 +76,8 @@ case ${TEE_TYPE} in
             echo "Can't find TEE_CERT_CHAIN file: ${TEE_CERT_CHAIN}"
             exit 1
         fi
+        ;&
+    "snp")
         if [ -z "${CW_PASSWORD}" ]; then
             CW_PASSWORD=`tr -dc A-Za-z0-9 </dev/urandom | head -c 64`
         fi
@@ -87,6 +87,14 @@ case ${TEE_TYPE} in
         exit 1
         ;;    
 esac
+
+if [ ${TEE_TYPE} == "sev" ]; then
+	KRUNFW_MEASUREMENT=`krunfw_measurement -c $CPUS -m $RAM_MIB /usr/lib64/libkrunfw-sev.so | grep SEV-ES | sed -e "s/SEV-ES:\s//g"`
+elif [ ${TEE_TYPE} == "snp" ]; then
+	KRUNFW_MEASUREMENT=`krunfw_measurement -c $CPUS -m $RAM_MIB /usr/lib64/libkrunfw-sev.so | grep SNP | sed -e "s/SNP:\s//g"`
+else
+	echo "Can't generate a launch measurement for this TEE type: ${TEE_TYPE}"
+fi
 
 if [ $? != 0 ] || [ -z "${KRUNFW_MEASUREMENT}" ]; then
     echo "Couldn't generate launch measurement for /usr/lib64/libkrunfw-sev.so"
@@ -151,11 +159,26 @@ if [ ! -e ${TMPDIR}/disk.img ]; then
 	exit 1
 fi
 
+# We need to attach the TEE config file at the end of the encrypted disk
+# image so it can be read by the guest in plain text.
+DISKSIZE=`stat --printf="%s" ${TMPDIR}/disk.img`
+CONFSIZE=`stat --printf="%s" ${TEE_CONFIG}`
+let EXTSIZE=($CONFSIZE/512+1)*512
+let PADDING=$EXTSIZE-$CONFSIZE-12
+dd if=/dev/zero of=${TMPDIR}/disk.img bs=1 seek=$DISKSIZE count=$PADDING
+cat ${TEE_CONFIG} >> ${TMPDIR}/disk.img
+echo -n "KRUN" >> ${TMPDIR}/disk.img
+perl -e "print pack("Q",(${CONFSIZE}))" >> ${TMPDIR}/disk.img
+
 mkdir -p ${TMPDIR}/tmp
 cp ${BASE_DIR}/entrypoint/entrypoint ${TMPDIR}/entrypoint
 chmod +x ${TMPDIR}/entrypoint
 cp ${TEE_CONFIG} $TMPDIR/krun-sev.json
-cp ${TEE_CERT_CHAIN} $TMPDIR/sev.chain
+if [ ${TEE_TYPE} == "sev" ]; then
+	cp ${TEE_CERT_CHAIN} $TMPDIR/sev.chain
+else
+	touch $TMPDIR/sev.chain
+fi
 
 cat << EOF > $TMPDIR/Containerfile
 FROM scratch
